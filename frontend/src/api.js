@@ -36,9 +36,18 @@ function authHeaders(extra = {}) {
 }
 
 async function handleJson(res, fallbackError) {
-  const data = await res.json().catch(() => ({}));
+  const text = await res.text().catch(() => '');
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
   if (!res.ok) {
-    throw new Error(data.error || fallbackError);
+    throw new Error(
+      data.error ||
+        `${fallbackError} (HTTP ${res.status}${!API_ORIGIN && window.location.hostname !== 'localhost' ? ' — VITE_API_URL is not configured' : ''})`
+    );
   }
   return data;
 }

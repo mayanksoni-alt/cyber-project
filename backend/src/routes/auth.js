@@ -60,7 +60,7 @@ router.post('/signup', async (req, res) => {
     res.status(201).json({ token, user: sanitizeUser(user) });
   } catch (err) {
     console.error('Signup error:', err);
-    res.status(500).json({ error: 'Could not create account.' });
+    res.status(500).json({ error: err?.message ? `Could not create account: ${err.message}` : 'Could not create account.' });
   }
 });
 

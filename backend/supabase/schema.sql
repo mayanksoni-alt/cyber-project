@@ -1,5 +1,5 @@
 -- Run this in your Supabase project: SQL Editor -> New query -> paste -> Run.
--- It creates the tables the backend uses to store users and scan results.
+-- Safe to re-run: creates/updates users and scans tables and policies idempotently.
 
 create table if not exists public.users (
   id            uuid primary key,
@@ -32,19 +32,24 @@ create table if not exists public.scans (
   finished_at   timestamptz
 );
 
+alter table public.scans add column if not exists user_id uuid references public.users(id) on delete set null;
+alter table public.scans add column if not exists scan_mode text not null default 'deep';
+
 create index if not exists scans_created_at_idx on public.scans (created_at desc);
 create index if not exists scans_user_id_idx on public.scans (user_id);
 
--- The backend connects with the service_role key, which bypasses RLS.
+-- The backend connects with the service_role / secret key, which bypasses RLS.
 alter table public.users enable row level security;
 alter table public.scans enable row level security;
 
+drop policy if exists "service manage users" on public.users;
 create policy "service manage users"
   on public.users for all
   to service_role
   using (true)
   with check (true);
 
+drop policy if exists "service manage scans" on public.scans;
 create policy "service manage scans"
   on public.scans for all
   to service_role
