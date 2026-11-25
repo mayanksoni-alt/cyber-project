@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: sentryscan-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: MAX_PAGES
+        value: "25"
+      - key: MAX_DEPTH
+        value: "2"
+      - key: REQUEST_TIMEOUT_MS
+        value: "10000"
