@@ -48,7 +48,7 @@ export default function LoginPage({ onAuthSuccess, navigate }) {
 
         <div className="auth-showcase-center">
           <HydrogenAtom size={160} scanning={busy} floating label="Hydrogen orbital emblem" />
-          <h2>Welcome back to SentryScan</h2>
+          <h2>Welcome back to NetHawk</h2>
           <p className="muted">
             Sign in to view your saved scan reports, track security scores over time, and export
             findings.

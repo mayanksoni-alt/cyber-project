@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  cancelScan,
   clearToken,
   deleteScan,
   getHistory,
@@ -43,7 +44,7 @@ export default function App() {
   const [route, setRoute] = useState(readInitialRoute);
   const [theme, setTheme] = useState(() => {
     try {
-      const saved = localStorage.getItem('sentryscan_theme');
+      const saved = localStorage.getItem('nethawk_theme');
       return saved === 'night' ? 'night' : 'light';
     } catch {
       return 'light';
@@ -87,7 +88,7 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
     try {
-      localStorage.setItem('sentryscan_theme', theme);
+      localStorage.setItem('nethawk_theme', theme);
     } catch {
       // ignore storage errors
     }
@@ -124,13 +125,21 @@ export default function App() {
 
   const handleLogout = () => {
     clearToken();
+    clearInterval(pollRef.current);
+    setLoading(false);
     setUser(null);
-    refreshHistory();
+    setScan(null);
+    setHistory([]);
     navigate('/login');
     showToast('Signed out');
   };
 
   const handleScan = async (url, options = {}) => {
+    if (!user) {
+      showToast('Please log in to run a scan');
+      navigate('/login');
+      return;
+    }
     setError('');
     setScan(null);
     setSeverityFilter('');
@@ -142,7 +151,14 @@ export default function App() {
 
     try {
       const { id } = await startScan(url, options);
+      const startedAt = Date.now();
       pollRef.current = setInterval(async () => {
+        if (Date.now() - startedAt > 65000) {
+          clearInterval(pollRef.current);
+          setLoading(false);
+          setError('Scan timed out waiting for the target to respond.');
+          return;
+        }
         try {
           const data = await getScan(id);
           setScan(data);
@@ -155,9 +171,24 @@ export default function App() {
           clearInterval(pollRef.current);
           setLoading(false);
         }
-      }, 1100);
+      }, 1000);
     } catch (e) {
       setError(e.message);
+      setLoading(false);
+    }
+  };
+
+  const handleStopScan = async () => {
+    if (!scan?.id) {
+      clearInterval(pollRef.current);
+      setLoading(false);
+      return;
+    }
+    try {
+      await cancelScan(scan.id);
+      showToast('Stopping scan…');
+    } catch {
+      clearInterval(pollRef.current);
       setLoading(false);
     }
   };
@@ -199,7 +230,7 @@ export default function App() {
       mime = 'text/markdown';
       ext = 'md';
       const lines = [
-        `# SentryScan Security Report`,
+        `# NetHawk Security Report`,
         ``,
         `- **Target:** ${scan.target_url}`,
         `- **Profile:** ${scan.scan_mode || 'deep'}`,
@@ -227,7 +258,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `sentryscan-report-${scan.id.slice(0, 8)}.${ext}`;
+    a.download = `nethawk-report-${scan.id.slice(0, 8)}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
     showToast(`Exported report as .${ext.toUpperCase()}`);
@@ -286,8 +317,26 @@ export default function App() {
                 <div className="pt-hero-badges">
                   <span className="pt-hero-badge">Light &amp; Deep Scan Profiles</span>
                   <span className="pt-hero-badge">OWASP Top 10 Mapped</span>
-                  <span className="pt-hero-badge">Exportable .MD &amp; JSON Reports</span>
+                  <span className="pt-hero-badge">Plain-English Fix Guides</span>
                 </div>
+                {authReady && !user && (
+                  <div className="pt-hero-cta">
+                    <button
+                      type="button"
+                      className="pt-start-btn"
+                      onClick={() => navigate('/signup')}
+                    >
+                      Create free account to scan
+                    </button>
+                    <button
+                      type="button"
+                      className="pt-nav-login"
+                      onClick={() => navigate('/login')}
+                    >
+                      Log in
+                    </button>
+                  </div>
+                )}
               </div>
 
               <HydrogenAtom
@@ -329,49 +378,120 @@ export default function App() {
                     <p className="muted" style={{ margin: 0 }}>
                       {user
                         ? `Showing scans recorded for ${user.name}. Click any target to open its full report.`
-                        : 'Log in or sign up to keep a personal archive of your scans.'}
+                        : 'Log in or sign up to run scans and keep a personal archive of your reports.'}
                     </p>
                   </div>
-                  <button type="button" className="btn btn-primary" onClick={() => navigate('/')}>
-                    + New scan
-                  </button>
+                  {user ? (
+                    <button type="button" className="btn btn-primary" onClick={() => navigate('/')}>
+                      + New scan
+                    </button>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button type="button" className="btn btn-ghost" onClick={() => navigate('/login')}>
+                        Log in
+                      </button>
+                      <button type="button" className="btn btn-primary" onClick={() => navigate('/signup')}>
+                        Sign up
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                <HistoryList
-                  history={history}
-                  onSelectScan={openHistoryScan}
-                  onDeleteScan={handleDeleteHistoryScan}
-                  title={`All scans (${history.length})`}
-                  showEmpty
-                />
+                {user && (
+                  <HistoryList
+                    history={history}
+                    onSelectScan={openHistoryScan}
+                    onDeleteScan={handleDeleteHistoryScan}
+                    title={`All scans (${history.length})`}
+                    showEmpty
+                  />
+                )}
               </section>
             )}
 
-            {route === '/' && (
+            {route === '/' && !user && (
+              <>
+                <section className="card pt-overview-card">
+                  <div className="pt-overview-head">
+                    <div>
+                      <span className="pt-mode-chip">What NetHawk Can Do</span>
+                      <h3 style={{ margin: '8px 0 4px', fontSize: 20 }}>
+                        Automated security checks explained in plain English
+                      </h3>
+                      <p className="muted" style={{ margin: 0, fontSize: 14 }}>
+                        Create a free account or log in to start scanning websites and saving reports.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => navigate('/checks')}
+                    >
+                      View all 10 checks →
+                    </button>
+                  </div>
+
+                  <div className="pt-pillars-grid">
+                    <div className="pt-pillar">
+                      <span className="pt-pillar-num">01</span>
+                      <h4>Security Headers &amp; HTTPS</h4>
+                      <p>
+                        Checks for missing CSP, HSTS, clickjacking protection, cookie safety flags,
+                        and unencrypted HTTP pages or redirects.
+                      </p>
+                    </div>
+                    <div className="pt-pillar">
+                      <span className="pt-pillar-num">02</span>
+                      <h4>Exposed Files &amp; Weak Forms</h4>
+                      <p>
+                        Crawls same-origin pages to find exposed <code>.env</code> / <code>.git</code>{' '}
+                        files, open directories, missing CSRF tokens, and outdated libraries.
+                      </p>
+                    </div>
+                    <div className="pt-pillar">
+                      <span className="pt-pillar-num">03</span>
+                      <h4>Clear Fixes &amp; Exportable Reports</h4>
+                      <p>
+                        Every issue explains what was found, why it matters in the real world, and
+                        gives copy-ready fix snippets plus <code>.MD</code> &amp; <code>.JSON</code> export.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="pt-compare-grid" aria-label="Scan modes comparison">
+                  <div className="card pt-compare-card">
+                    <span className="pt-mode-chip">Light Scan</span>
+                    <h3>Fast Passive Reconnaissance</h3>
+                    <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
+                      Ideal for quick checks of live headers, TLS posture, and surface configuration.
+                    </p>
+                    <ul className="pt-compare-list">
+                      <li>✓ Inspects HTTP security headers &amp; CSP</li>
+                      <li>✓ Checks HTTPS redirect &amp; cookie flags</li>
+                      <li>✓ Crawls up to 5 key pages (depth 1)</li>
+                    </ul>
+                  </div>
+
+                  <div className="card pt-compare-card">
+                    <span className="pt-mode-chip">Deep Scan</span>
+                    <h3>Comprehensive OWASP Audit</h3>
+                    <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
+                      Full same-origin crawl with form auditing, sensitive path checks, and reflection indicators.
+                    </p>
+                    <ul className="pt-compare-list">
+                      <li>✓ Crawls up to 25 same-origin pages (depth 2)</li>
+                      <li>✓ Audits CSRF tokens, mixed content &amp; libraries</li>
+                      <li>✓ Probes exposed paths (.env, .git) &amp; XSS reflection</li>
+                    </ul>
+                  </div>
+                </section>
+              </>
+            )}
+
+            {route === '/' && user && (
               <>
                 <ScanForm onScan={handleScan} busy={busy} />
-
-                {authReady && !user && (
-                  <p className="muted" style={{ fontSize: 13, marginTop: 12, textAlign: 'center' }}>
-                    Want to keep a persistent workspace archive?{' '}
-                    <button
-                      type="button"
-                      className="link-btn"
-                      onClick={() => navigate('/signup')}
-                    >
-                      Create an account
-                    </button>{' '}
-                    or{' '}
-                    <button
-                      type="button"
-                      className="link-btn"
-                      onClick={() => navigate('/login')}
-                    >
-                      log in
-                    </button>
-                    .
-                  </p>
-                )}
 
                 {error && <div className="error-box">{error}</div>}
 
@@ -398,6 +518,13 @@ export default function App() {
                           {idx < statusStep ? `${label} ✓` : label}
                         </span>
                       ))}
+                      <button
+                        type="button"
+                        className="btn btn-danger-ghost btn-sm"
+                        onClick={handleStopScan}
+                      >
+                        Stop
+                      </button>
                     </div>
                     <div className="progress-beam" />
                   </section>
@@ -573,10 +700,10 @@ export default function App() {
                       {filteredFindings.length > 0 && (
                         <div className="pt-table-head">
                           <span>Severity</span>
-                          <span>Vulnerability</span>
+                          <span>Issue &amp; Plain Summary</span>
                           <span>OWASP</span>
-                          <span>Affected Location</span>
-                          <span>Validation</span>
+                          <span>Affected Page</span>
+                          <span>Priority</span>
                           <span />
                         </div>
                       )}
@@ -592,6 +719,7 @@ export default function App() {
                           <VulnCard
                             key={f.id || idx}
                             finding={f}
+                            defaultOpen={idx === 0}
                             expandSignal={expandSignal}
                           />
                         ))
@@ -641,7 +769,7 @@ export default function App() {
         </main>
 
         <footer className="footer">
-          Built for educational cybersecurity use · SentryScan Website Vulnerability Scanner
+          Built for educational cybersecurity use · NetHawk Website Vulnerability Scanner
         </footer>
       </div>
 

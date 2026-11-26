@@ -1,10 +1,11 @@
-// Thin wrapper around fetch with a timeout and consistent return shape.
+// Thin wrapper around fetch with a tight timeout and consistent return shape.
 // Node 18+ has global fetch, so no extra dependency is needed.
 
-const DEFAULT_TIMEOUT = Number(process.env.REQUEST_TIMEOUT_MS) || 10000;
+const DEFAULT_TIMEOUT = Number(process.env.REQUEST_TIMEOUT_MS) || 4500;
+const MAX_BODY_CHARS = 512_000;
 
 const USER_AGENT =
-  'VulnScanner/1.0 (+educational security project; scan only authorised targets)';
+  'Mozilla/5.0 (compatible; NetHawk/1.0; +educational-security-scanner)';
 
 export async function request(url, { method = 'GET', timeout = DEFAULT_TIMEOUT } = {}) {
   const controller = new AbortController();
@@ -13,25 +14,24 @@ export async function request(url, { method = 'GET', timeout = DEFAULT_TIMEOUT }
   try {
     const res = await fetch(url, {
       method,
-      redirect: 'manual', // we want to inspect redirects ourselves
+      redirect: 'manual', // inspect redirects explicitly
       signal: controller.signal,
-      headers: { 'User-Agent': USER_AGENT, Accept: '*/*' },
+      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml,*/*;q=0.8' },
     });
 
-    // Collect headers into a plain object (keys lower-cased by fetch already)
     const headers = {};
     res.headers.forEach((value, key) => {
       headers[key] = value;
     });
 
-    // Set-Cookie needs special handling (getSetCookie keeps them separate)
     const setCookies =
       typeof res.headers.getSetCookie === 'function' ? res.headers.getSetCookie() : [];
 
     let body = '';
     const contentType = headers['content-type'] || '';
     if (method === 'GET' && /text|html|json|xml|javascript/.test(contentType)) {
-      body = await res.text();
+      const text = await res.text();
+      body = text.length > MAX_BODY_CHARS ? text.slice(0, MAX_BODY_CHARS) : text;
     }
 
     return {

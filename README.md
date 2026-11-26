@@ -1,4 +1,4 @@
-# 🛡️ SentryScan — Web Vulnerability Scanner
+# 🛡️ NetHawk — Web Vulnerability Scanner
 
 A full-stack web vulnerability scanner. Enter a URL; it crawls the site and runs
 a battery of **detection** checks (security headers, insecure cookies, exposed

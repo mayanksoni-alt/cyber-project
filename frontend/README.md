@@ -1,4 +1,4 @@
-# Frontend — SentryScan UI
+# Frontend — NetHawk UI
 
 React + Vite single-page app. Clean, fast, card-based interface.
 

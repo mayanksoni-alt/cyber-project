@@ -2,7 +2,7 @@ import { SEVERITY } from '../utils/severity.js';
 import { request } from '../utils/http.js';
 
 // Each check returns an array of findings. A finding looks like:
-// { id, title, severity, description, evidence, remediation, owasp, location }
+// { id, title, summary, impact, severity, description, evidence, remediation, exampleFix, owasp, location }
 
 let counter = 0;
 const finding = (f) => ({ id: `F-${++counter}`, ...f });
@@ -17,39 +17,69 @@ export function checkSecurityHeaders(mainPage) {
   const required = [
     {
       name: 'content-security-policy',
-      title: 'Missing Content-Security-Policy header',
+      title: 'No script protection rule (Missing Content-Security-Policy)',
+      summary: 'Your site does not tell browsers which scripts and resources are safe to run.',
+      impact:
+        'If an attacker manages to inject malicious code into a page, the browser will run it freely—putting user logins, cookies, and data at risk.',
       severity: SEVERITY.MEDIUM,
-      remediation: 'Add a Content-Security-Policy to restrict which scripts/styles can load and mitigate XSS.',
+      remediation:
+        'Add a Content-Security-Policy (CSP) response header on your web server or CDN to allow scripts only from your own domain and trusted sources.',
+      exampleFix: "Content-Security-Policy: default-src 'self'; script-src 'self'",
     },
     {
       name: 'strict-transport-security',
-      title: 'Missing HTTP Strict-Transport-Security (HSTS)',
+      title: 'Browsers are not forced to stay on HTTPS (Missing HSTS)',
+      summary: 'Your site supports HTTPS, but does not instruct browsers to always connect securely.',
+      impact:
+        'On public Wi-Fi or untrusted networks, an attacker could briefly downgrade a visitor’s first connection to unencrypted HTTP and intercept traffic.',
       severity: SEVERITY.MEDIUM,
-      remediation: 'Add "Strict-Transport-Security: max-age=31536000; includeSubDomains" to force HTTPS.',
+      remediation:
+        'Enable the Strict-Transport-Security (HSTS) header so browsers automatically upgrade every visit to HTTPS.',
+      exampleFix: 'Strict-Transport-Security: max-age=31536000; includeSubDomains',
     },
     {
       name: 'x-frame-options',
-      title: 'Missing X-Frame-Options (clickjacking protection)',
+      title: 'Site can be embedded in hidden frames (Clickjacking risk)',
+      summary: 'Other websites can load your pages inside an invisible frame (iframe).',
+      impact:
+        'An attacker could overlay a fake button on top of your real site inside an invisible frame, tricking visitors into clicking "Delete", "Pay", or changing settings without realizing it.',
       severity: SEVERITY.MEDIUM,
-      remediation: 'Add "X-Frame-Options: DENY" or a CSP frame-ancestors directive.',
+      remediation:
+        'Block other sites from framing your pages by adding the X-Frame-Options header (or CSP frame-ancestors).',
+      exampleFix: 'X-Frame-Options: SAMEORIGIN',
     },
     {
       name: 'x-content-type-options',
-      title: 'Missing X-Content-Type-Options header',
+      title: 'Browser file-type guessing is enabled (Missing X-Content-Type-Options)',
+      summary: 'Browsers are allowed to guess the file type of downloads or uploads instead of trusting your server.',
+      impact:
+        'A harmless-looking uploaded file (such as an image or text file) could be misinterpreted by a browser as executable script code.',
       severity: SEVERITY.LOW,
-      remediation: 'Add "X-Content-Type-Options: nosniff" to stop MIME-type sniffing.',
+      remediation:
+        'Add the X-Content-Type-Options header with the value "nosniff" so browsers strictly follow declared file types.',
+      exampleFix: 'X-Content-Type-Options: nosniff',
     },
     {
       name: 'referrer-policy',
-      title: 'Missing Referrer-Policy header',
+      title: 'Full page URLs may leak to external sites (Missing Referrer-Policy)',
+      summary: 'When users click a link to another website, the browser may share the full URL they came from.',
+      impact:
+        'If your URLs contain sensitive details like search terms, user IDs, or reset tokens, third-party websites could see them in their analytics.',
       severity: SEVERITY.LOW,
-      remediation: 'Add "Referrer-Policy: strict-origin-when-cross-origin".',
+      remediation:
+        'Set a Referrer-Policy header so only your domain name (not full page paths or query parameters) is shared externally.',
+      exampleFix: 'Referrer-Policy: strict-origin-when-cross-origin',
     },
     {
       name: 'permissions-policy',
-      title: 'Missing Permissions-Policy header',
+      title: 'Browser device permissions are not restricted (Missing Permissions-Policy)',
+      summary: 'The site does not explicitly restrict browser features like camera, microphone, or location.',
+      impact:
+        'Embedded third-party scripts or iframes could request sensitive device permissions that your site does not actually need.',
       severity: SEVERITY.INFO,
-      remediation: 'Add a Permissions-Policy to limit access to camera, microphone, geolocation, etc.',
+      remediation:
+        'Add a Permissions-Policy header to disable unused device APIs like camera, microphone, and geolocation.',
+      exampleFix: 'Permissions-Policy: camera=(), microphone=(), geolocation=()',
     },
   ];
 
@@ -58,10 +88,13 @@ export function checkSecurityHeaders(mainPage) {
       findings.push(
         finding({
           title: r.title,
+          summary: r.summary,
+          impact: r.impact,
           severity: r.severity,
-          description: `The response does not set the "${r.name}" header.`,
-          evidence: `Header "${r.name}" not present on ${mainPage.url}`,
+          description: r.summary,
+          evidence: `Header "${r.name}" was not returned by ${mainPage.url}`,
           remediation: r.remediation,
+          exampleFix: r.exampleFix,
           owasp: 'A05:2021 Security Misconfiguration',
           location: mainPage.url,
         })
@@ -81,11 +114,15 @@ export function checkInfoDisclosure(mainPage) {
   if (h['x-powered-by']) {
     findings.push(
       finding({
-        title: 'Technology disclosure via X-Powered-By',
+        title: 'Website advertises its backend framework (X-Powered-By header)',
+        summary: `Your server announces that it runs on "${h['x-powered-by']}".`,
+        impact:
+          'Knowing the exact framework makes it much easier for automated bots to look up and try known exploits tailored to that software.',
         severity: SEVERITY.LOW,
-        description: 'The server reveals its underlying technology, which helps attackers target known flaws.',
+        description: `The server reveals its underlying technology ("${h['x-powered-by']}") in public response headers.`,
         evidence: `X-Powered-By: ${h['x-powered-by']}`,
-        remediation: 'Remove or obscure the X-Powered-By header.',
+        remediation:
+          'Disable or remove the X-Powered-By header in your web server or framework settings (for example, `app.disable("x-powered-by")` in Express).',
         owasp: 'A05:2021 Security Misconfiguration',
         location: mainPage.url,
       })
@@ -95,11 +132,15 @@ export function checkInfoDisclosure(mainPage) {
   if (h['server'] && /[0-9]/.test(h['server'])) {
     findings.push(
       finding({
-        title: 'Server version disclosure',
+        title: 'Server exposes its exact software version',
+        summary: `Your server header shares version details ("${h['server']}").`,
+        impact:
+          'Attackers scan for specific version numbers to quickly spot outdated servers with publicly known vulnerabilities.',
         severity: SEVERITY.LOW,
-        description: 'The Server header exposes software and version details.',
+        description: `The Server header exposes software and version details ("${h['server']}").`,
         evidence: `Server: ${h['server']}`,
-        remediation: 'Configure the server to suppress version information in the Server header.',
+        remediation:
+          'Configure Nginx, Apache, or your proxy to hide version numbers (for example, `server_tokens off;` in Nginx).',
         owasp: 'A05:2021 Security Misconfiguration',
         location: mainPage.url,
       })
@@ -128,13 +169,19 @@ export function checkCookies(pages) {
       if (!lower.includes('samesite')) missing.push('SameSite');
 
       if (missing.length) {
+        const isHttpOnlyMissing = missing.includes('HttpOnly');
         findings.push(
           finding({
-            title: `Cookie "${name}" missing ${missing.join(', ')} flag(s)`,
-            severity: missing.includes('HttpOnly') ? SEVERITY.MEDIUM : SEVERITY.LOW,
-            description: 'Cookies without protective flags can be stolen via XSS or sent over insecure channels.',
+            title: `Cookie "${name}" is missing safety flags (${missing.join(', ')})`,
+            summary: `The browser cookie "${name}" lacks ${missing.join(', ')} protection.`,
+            impact: isHttpOnlyMissing
+              ? 'Because HttpOnly is missing, malicious JavaScript (if present) could read this cookie—potentially hijacking a user’s logged-in session.'
+              : 'Without Secure and SameSite flags, this cookie could be sent over unencrypted connections or triggered unexpectedly from third-party sites.',
+            severity: isHttpOnlyMissing ? SEVERITY.MEDIUM : SEVERITY.LOW,
+            description: `Cookies without ${missing.join(', ')} flags can be exposed to scripts or cross-site requests.`,
             evidence: cookie.slice(0, 120),
-            remediation: `Set the ${missing.join(', ')} attribute(s) on this cookie.`,
+            remediation: `Update the "${name}" cookie configuration to include ${missing.join(', ')} attributes.`,
+            exampleFix: `Set-Cookie: ${name}=...; Secure; HttpOnly; SameSite=Lax`,
             owasp: 'A05:2021 Security Misconfiguration',
             location: page.url,
           })
@@ -155,11 +202,14 @@ export async function checkHttps(targetUrl) {
   if (u.protocol === 'http:') {
     findings.push(
       finding({
-        title: 'Site served over plain HTTP',
+        title: 'Website is not encrypted (Uses plain HTTP instead of HTTPS)',
+        summary: 'Data sent between visitors and this website is completely unencrypted.',
+        impact:
+          'Anyone on the same Wi-Fi network or internet path can read passwords, form inputs, and personal information in plain text, or alter pages in transit.',
         severity: SEVERITY.HIGH,
-        description: 'Traffic is unencrypted and can be intercepted or modified in transit.',
+        description: 'Traffic is unencrypted over plain HTTP and can be intercepted or modified in transit.',
         evidence: `Target protocol: ${u.protocol}`,
-        remediation: 'Serve the site exclusively over HTTPS with a valid TLS certificate.',
+        remediation: 'Install an SSL/TLS certificate (such as Let’s Encrypt) and serve the entire site over HTTPS.',
         owasp: 'A02:2021 Cryptographic Failures',
         location: targetUrl,
       })
@@ -169,15 +219,18 @@ export async function checkHttps(targetUrl) {
 
   // HTTPS site: does the HTTP version redirect to HTTPS?
   const httpVersion = 'http://' + u.host + u.pathname;
-  const res = await request(httpVersion);
+  const res = await request(httpVersion, { timeout: 3500 });
   if (res.ok && res.status >= 200 && res.status < 300) {
     findings.push(
       finding({
-        title: 'HTTP version does not redirect to HTTPS',
+        title: 'Insecure HTTP links do not automatically redirect to HTTPS',
+        summary: 'If someone types http:// instead of https://, the site stays unencrypted instead of redirecting.',
+        impact:
+          'Visitors clicking older links or typing the domain without "https://" may end up on an unencrypted connection.',
         severity: SEVERITY.MEDIUM,
-        description: 'The site is reachable over plain HTTP without being forced to the secure version.',
-        evidence: `${httpVersion} returned ${res.status} instead of a redirect`,
-        remediation: 'Add a 301 redirect from HTTP to HTTPS for all paths.',
+        description: 'The site is reachable over plain HTTP without redirecting visitors to HTTPS.',
+        evidence: `${httpVersion} returned HTTP ${res.status} instead of a 301/302 redirect`,
+        remediation: 'Configure a permanent 301 redirect from all http:// URLs to https://.',
         owasp: 'A02:2021 Cryptographic Failures',
         location: httpVersion,
       })
@@ -190,43 +243,43 @@ export async function checkHttps(targetUrl) {
  * 5. Exposed sensitive files / paths (detection only, polite probe)
  * ------------------------------------------------------------------ */
 const SENSITIVE_PATHS = [
-  { path: '/.env', sev: SEVERITY.CRITICAL, sig: /[A-Z_]+=/ },
-  { path: '/.git/config', sev: SEVERITY.CRITICAL, sig: /\[core\]|repositoryformatversion/ },
-  { path: '/config.php.bak', sev: SEVERITY.CRITICAL, sig: /<\?php/ },
-  { path: '/backup.zip', sev: SEVERITY.HIGH, sig: null },
-  { path: '/.htaccess', sev: SEVERITY.MEDIUM, sig: /RewriteEngine|Order allow/ },
-  { path: '/phpinfo.php', sev: SEVERITY.HIGH, sig: /phpinfo\(\)|PHP Version/ },
-  { path: '/server-status', sev: SEVERITY.MEDIUM, sig: /Apache Server Status/ },
-  { path: '/.DS_Store', sev: SEVERITY.LOW, sig: null },
-  { path: '/wp-config.php.bak', sev: SEVERITY.CRITICAL, sig: /DB_PASSWORD/ },
+  { path: '/.env', sev: SEVERITY.CRITICAL, sig: /[A-Z_]+=/, label: 'environment secrets file (.env)' },
+  { path: '/.git/config', sev: SEVERITY.CRITICAL, sig: /\[core\]|repositoryformatversion/, label: 'Git repository config' },
+  { path: '/config.php.bak', sev: SEVERITY.CRITICAL, sig: /<\?php/, label: 'PHP configuration backup' },
+  { path: '/backup.zip', sev: SEVERITY.HIGH, sig: null, label: 'site backup archive' },
+  { path: '/.htaccess', sev: SEVERITY.MEDIUM, sig: /RewriteEngine|Order allow/, label: 'Apache rules file (.htaccess)' },
+  { path: '/phpinfo.php', sev: SEVERITY.HIGH, sig: /phpinfo\(\)|PHP Version/, label: 'PHP diagnostics page (phpinfo)' },
+  { path: '/server-status', sev: SEVERITY.MEDIUM, sig: /Apache Server Status/, label: 'server status page' },
+  { path: '/.DS_Store', sev: SEVERITY.LOW, sig: null, label: 'macOS folder metadata (.DS_Store)' },
+  { path: '/wp-config.php.bak', sev: SEVERITY.CRITICAL, sig: /DB_PASSWORD/, label: 'WordPress database config backup' },
 ];
 
 export async function checkExposedPaths(targetUrl) {
   const origin = new URL(targetUrl).origin;
-  const findings = [];
+  const results = await Promise.all(
+    SENSITIVE_PATHS.map(async (item) => {
+      const res = await request(origin + item.path, { timeout: 3500 });
+      if (!res.ok || res.status !== 200) return null;
 
-  for (const item of SENSITIVE_PATHS) {
-    const res = await request(origin + item.path);
-    if (!res.ok || res.status !== 200) continue;
+      const matches = item.sig ? item.sig.test(res.body || '') : true;
+      if (!matches) return null;
 
-    // If a signature is defined, confirm the body actually matches it to
-    // avoid false positives from catch-all 200 pages.
-    const matches = item.sig ? item.sig.test(res.body || '') : true;
-    if (!matches) continue;
-
-    findings.push(
-      finding({
-        title: `Exposed sensitive file: ${item.path}`,
+      return finding({
+        title: `Private file is publicly downloadable: ${item.path}`,
+        summary: `Anyone on the internet can open ${item.path} (${item.label}).`,
+        impact:
+          'Files like .env, .git, or backups frequently contain database passwords, API keys, or source code that let attackers take over the server.',
         severity: item.sev,
-        description: 'A sensitive file or endpoint is publicly accessible and may leak secrets or source code.',
+        description: `A sensitive ${item.label} is publicly accessible and may leak secrets or source code.`,
         evidence: `${origin + item.path} returned HTTP 200`,
-        remediation: 'Remove the file from the web root or block access to it at the server level.',
+        remediation: `Immediately delete ${item.path} from your public folder or block access to it in your web server rules, and rotate any exposed keys.`,
         owasp: 'A01:2021 Broken Access Control',
         location: origin + item.path,
-      })
-    );
-  }
-  return findings;
+      });
+    })
+  );
+
+  return results.filter(Boolean);
 }
 
 /* ------------------------------------------------------------------ *
@@ -238,11 +291,14 @@ export function checkDirectoryListing(pages) {
     if (/<title>Index of \/|Directory listing for/i.test(page.body || '')) {
       findings.push(
         finding({
-          title: 'Directory listing enabled',
+          title: 'Folder contents are publicly browseable (Directory listing)',
+          summary: 'Visiting this URL displays a raw list of files and folders on the server.',
+          impact:
+            'Visitors and bots can browse internal scripts, backups, or uploaded files that were never meant to be discovered.',
           severity: SEVERITY.MEDIUM,
-          description: 'The server lists directory contents, exposing file structure to attackers.',
+          description: 'The server exposes a directory file index to public visitors.',
           evidence: `"Index of /" found at ${page.url}`,
-          remediation: 'Disable automatic directory indexing on the web server.',
+          remediation: 'Turn off automatic directory indexing (e.g. `Options -Indexes` in Apache or `autoindex off;` in Nginx).',
           owasp: 'A05:2021 Security Misconfiguration',
           location: page.url,
         })
@@ -263,11 +319,14 @@ export function checkForms(forms) {
     if (form.method === 'post' && !form.hasCsrfToken) {
       findings.push(
         finding({
-          title: 'Form without CSRF protection',
+          title: 'Form lacks anti-forgery protection (Missing CSRF token)',
+          summary: 'A form that submits data does not include a hidden security token to verify the request came from your site.',
+          impact:
+            'If a logged-in user visits a malicious website, that site could trick their browser into submitting this form silently on their behalf.',
           severity: SEVERITY.MEDIUM,
           description: 'A state-changing POST form has no detectable anti-CSRF token.',
           evidence: `POST form at ${form.pageUrl} (action: ${form.action || 'self'})`,
-          remediation: 'Add a per-session anti-CSRF token to the form and validate it server-side.',
+          remediation: 'Add a unique hidden CSRF token to every state-changing form and validate it on the server.',
           owasp: 'A01:2021 Broken Access Control',
           location: form.pageUrl,
         })
@@ -277,11 +336,14 @@ export function checkForms(forms) {
     if (form.hasPassword && actionUrl && actionUrl.startsWith('http://')) {
       findings.push(
         finding({
-          title: 'Password submitted over insecure HTTP',
+          title: 'Password form sends login details without encryption',
+          summary: 'A password field submits to an unencrypted http:// address.',
+          impact:
+            'Anyone monitoring the network could capture the user’s password in plain text as soon as they click Log in.',
           severity: SEVERITY.HIGH,
-          description: 'A login/password form posts credentials over an unencrypted connection.',
+          description: 'A login/password form posts credentials over an unencrypted HTTP connection.',
           evidence: `Password form posts to ${actionUrl}`,
-          remediation: 'Submit all credential forms over HTTPS.',
+          remediation: 'Change the form action URL and host page to use HTTPS exclusively.',
           owasp: 'A02:2021 Cryptographic Failures',
           location: form.pageUrl,
         })
@@ -302,11 +364,14 @@ export function checkMixedContent(pages) {
     if (matches.length) {
       findings.push(
         finding({
-          title: 'Mixed content on secure page',
+          title: 'Secure HTTPS page loads unencrypted HTTP files (Mixed content)',
+          summary: `Found ${matches.length} script, image, or stylesheet link(s) still using http:// on an HTTPS page.`,
+          impact:
+            'Browsers may show a "Not Secure" warning or block those files, and unencrypted scripts could be tampered with on public networks.',
           severity: SEVERITY.LOW,
-          description: 'An HTTPS page loads one or more resources over plain HTTP, weakening the secure context.',
+          description: 'An HTTPS page loads one or more sub-resources over plain HTTP.',
           evidence: `${matches.length} HTTP resource(s), e.g. ${matches[0].slice(0, 80)}`,
-          remediation: 'Load all resources over HTTPS (or protocol-relative URLs).',
+          remediation: 'Update all src and href links to use https:// instead of http://.',
           owasp: 'A02:2021 Cryptographic Failures',
           location: page.url,
         })
@@ -332,11 +397,14 @@ export function checkOutdatedLibraries(scripts) {
       if (lib.re.test(src)) {
         findings.push(
           finding({
-            title: `Potentially outdated library: ${lib.name}`,
+            title: `Old JavaScript library in use: ${lib.name}`,
+            summary: `The site loads ${lib.name}, which is no longer supported with security updates.`,
+            impact:
+              'Legacy frontend libraries often have publicly documented XSS bugs that attackers automate against older versions.',
             severity: SEVERITY.LOW,
-            description: 'An old front-end library version was detected and may contain known vulnerabilities.',
+            description: `An outdated version of ${lib.name} was detected and may contain known security flaws.`,
             evidence: src,
-            remediation: `Upgrade ${lib.name} to a currently supported release.`,
+            remediation: `Upgrade ${lib.name} to the latest supported version and re-test your pages.`,
             owasp: 'A06:2021 Vulnerable and Outdated Components',
             location: src,
           })
@@ -353,39 +421,47 @@ export function checkOutdatedLibraries(scripts) {
  *     whether it is reflected unencoded. Detection only — no payloads.
  * ------------------------------------------------------------------ */
 export async function checkReflectedInput(pages) {
-  const findings = [];
   const marker = 'vs' + Math.random().toString(36).slice(2, 8) + 'xyz';
+  const candidates = [];
 
-  for (const page of pages.slice(0, 5)) {
-    let u;
+  for (const page of pages) {
+    if (candidates.length >= 3) break;
     try {
-      u = new URL(page.url);
+      const u = new URL(page.url);
+      if ([...u.searchParams.keys()].length === 0) continue;
+      for (const key of u.searchParams.keys()) u.searchParams.set(key, marker);
+      candidates.push({ originalUrl: page.url, testUrl: u.href });
     } catch {
       continue;
     }
-    if ([...u.searchParams.keys()].length === 0) continue;
+  }
 
-    // Replace each existing param value with the harmless marker
-    for (const key of u.searchParams.keys()) u.searchParams.set(key, marker);
+  if (candidates.length === 0) return [];
 
-    const res = await request(u.href);
-    if (res.ok && res.body && res.body.includes(marker)) {
-      findings.push(
+  const responses = await Promise.all(
+    candidates.map(async (c) => ({ ...c, res: await request(c.testUrl, { timeout: 3500 }) }))
+  );
+
+  for (const item of responses) {
+    if (item.res.ok && item.res.body && item.res.body.includes(marker)) {
+      return [
         finding({
-          title: 'Reflected user input detected',
+          title: 'URL text is echoed directly onto the page (Potential XSS)',
+          summary: 'Values typed into the URL query string appear back inside the webpage HTML.',
+          impact:
+            'If special characters like < or > are not safely escaped, an attacker could craft a malicious link that runs JavaScript inside a victim’s browser.',
           severity: SEVERITY.MEDIUM,
           description:
-            'A query parameter value is reflected in the response. If not properly encoded this can enable reflected XSS.',
-          evidence: `Marker reflected from parameters on ${u.href}`,
-          remediation: 'Context-encode all user input on output and validate inputs server-side.',
+            'A query parameter value is reflected in the response. Without proper HTML encoding, this can lead to Cross-Site Scripting (XSS).',
+          evidence: `Harmless test text "${marker}" was reflected on ${item.testUrl}`,
+          remediation: 'Escape/encode all user-supplied text before rendering it in HTML and use a strong Content-Security-Policy.',
           owasp: 'A03:2021 Injection',
-          location: page.url,
-        })
-      );
-      break; // one finding is enough to flag the pattern
+          location: item.originalUrl,
+        }),
+      ];
     }
   }
-  return findings;
+  return [];
 }
 
 function resolveAction(action, base) {

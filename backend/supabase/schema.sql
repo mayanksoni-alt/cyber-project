@@ -39,6 +39,11 @@ create index if not exists scans_created_at_idx on public.scans (created_at desc
 create index if not exists scans_user_id_idx on public.scans (user_id);
 
 -- The backend connects with the service_role / secret key, which bypasses RLS.
+-- Explicit Postgres grants are required so service_role can read/write tables created via SQL Editor.
+grant usage on schema public to service_role;
+grant select, insert, update, delete on table public.users to service_role;
+grant select, insert, update, delete on table public.scans to service_role;
+
 alter table public.users enable row level security;
 alter table public.scans enable row level security;
 

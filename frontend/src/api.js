@@ -4,7 +4,7 @@
 
 const API_ORIGIN = (import.meta.env.VITE_API_URL || '').trim().replace(/\/+$/, '');
 const BASE = API_ORIGIN ? `${API_ORIGIN}/api` : '/api';
-const TOKEN_KEY = 'sentryscan_token';
+const TOKEN_KEY = 'nethawk_token';
 
 export function getToken() {
   try {
@@ -112,7 +112,16 @@ export async function getScan(id) {
   return handleJson(res, 'Failed to fetch scan');
 }
 
+export async function cancelScan(id) {
+  const res = await fetch(`${BASE}/scan/${id}/cancel`, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  return handleJson(res, 'Failed to stop scan');
+}
+
 export async function getHistory(scope = 'mine') {
+  if (!getToken()) return [];
   const res = await fetch(`${BASE}/scans?scope=${encodeURIComponent(scope)}`, {
     headers: authHeaders(),
   });

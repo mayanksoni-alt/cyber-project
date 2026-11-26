@@ -1,33 +1,67 @@
 import * as cheerio from 'cheerio';
 import { request } from '../utils/http.js';
 
-// A polite, same-origin breadth-first crawler.
-// It collects pages, forms, links, scripts and cookies for the scanner to analyse.
+// A fast, polite, same-origin breadth-first crawler with strict time & failure limits
+// so scans never hang when a site has nothing left to crawl or blocks requests.
 
 const DEFAULT_MAX_PAGES = Number(process.env.MAX_PAGES) || 25;
 const DEFAULT_MAX_DEPTH = Number(process.env.MAX_DEPTH) || 2;
+const SKIP_EXT_RE = /\.(png|jpe?g|gif|svg|webp|ico|css|js|mjs|pdf|zip|gz|tar|mp4|mp3|woff2?|ttf|eot)(\?|$)/i;
 
 export async function crawl(startUrl, onProgress = () => {}, options = {}) {
-  const maxPages = Math.max(1, Math.min(50, Number(options.maxPages) || DEFAULT_MAX_PAGES));
-  const maxDepth = Math.max(0, Math.min(4, options.maxDepth ?? DEFAULT_MAX_DEPTH));
+  const maxPages = Math.max(1, Math.min(40, Number(options.maxPages) || DEFAULT_MAX_PAGES));
+  const maxDepth = Math.max(0, Math.min(3, options.maxDepth ?? DEFAULT_MAX_DEPTH));
+  const maxDurationMs = options.mode === 'light' ? 12000 : 22000;
+  const maxAttempts = maxPages * 2;
+  const startedAt = Date.now();
 
   const origin = new URL(startUrl).origin;
   const host = new URL(startUrl).host;
 
   const visited = new Set();
-  const queue = [{ url: startUrl, depth: 0 }];
+  const queued = new Set([stripHash(startUrl)]);
+  const queue = [{ url: stripHash(startUrl), depth: 0 }];
 
   const pages = [];     // { url, status, headers, body, setCookies }
   const forms = [];     // { pageUrl, action, method, hasPassword, inputs, hasCsrfToken }
   const scripts = new Set();
 
-  while (queue.length && pages.length < maxPages) {
-    const { url, depth } = queue.shift();
-    if (visited.has(url)) continue;
-    visited.add(url);
+  let attempts = 0;
+  let consecutiveFailures = 0;
 
-    const res = await request(url);
-    if (!res.ok) continue;
+  while (queue.length && pages.length < maxPages && attempts < maxAttempts) {
+    if (Date.now() - startedAt > maxDurationMs) break;
+    if (consecutiveFailures >= 4) break;
+    if (options.shouldStop?.()) break;
+
+    const { url, depth } = queue.shift();
+    if (visited.has(url) || SKIP_EXT_RE.test(url)) continue;
+    visited.add(url);
+    attempts++;
+
+    const res = await request(url, { timeout: 4000 });
+    if (!res.ok) {
+      consecutiveFailures++;
+      continue;
+    }
+
+    consecutiveFailures = 0;
+
+    // If the entry URL redirects (e.g. example.com -> www.example.com), follow once on same host/root
+    if (pages.length === 0 && res.status >= 300 && res.status < 400 && res.headers.location) {
+      const nextUrl = stripHash(resolve(res.headers.location, url) || '');
+      if (nextUrl && !visited.has(nextUrl) && !queued.has(nextUrl)) {
+        try {
+          const parsedNext = new URL(nextUrl);
+          if (parsedNext.protocol.startsWith('http')) {
+            queued.add(nextUrl);
+            queue.unshift({ url: nextUrl, depth });
+          }
+        } catch {
+          // ignore invalid redirect URL
+        }
+      }
+    }
 
     pages.push({
       url: res.finalUrl || url,
@@ -37,7 +71,7 @@ export async function crawl(startUrl, onProgress = () => {}, options = {}) {
       body: res.body,
     });
 
-    onProgress({ crawled: pages.length, current: url });
+    await onProgress({ crawled: pages.length, current: url });
 
     // Only parse HTML pages for links/forms
     const contentType = res.headers['content-type'] || '';
@@ -73,19 +107,28 @@ export async function crawl(startUrl, onProgress = () => {}, options = {}) {
     // Collect external/internal scripts for fingerprinting
     $('script[src]').each((_i, el) => {
       const src = $(el).attr('src');
-      if (src) scripts.add(resolve(src, url));
+      const absSrc = resolve(src, url);
+      if (absSrc) scripts.add(absSrc);
     });
 
-    // Enqueue same-host links
-    if (depth < maxDepth) {
+    // Enqueue unique same-origin links
+    if (depth < maxDepth && queue.length < maxPages * 3) {
       $('a[href]').each((_i, el) => {
         const href = $(el).attr('href');
         const abs = resolve(href, url);
         if (!abs) return;
+        const clean = stripHash(abs);
+        if (SKIP_EXT_RE.test(clean)) return;
         try {
-          const u = new URL(abs);
-          if (u.host === host && !visited.has(abs) && u.origin === origin) {
-            queue.push({ url: stripHash(abs), depth: depth + 1 });
+          const u = new URL(clean);
+          if (
+            u.host === host &&
+            u.origin === origin &&
+            !visited.has(clean) &&
+            !queued.has(clean)
+          ) {
+            queued.add(clean);
+            queue.push({ url: clean, depth: depth + 1 });
           }
         } catch {
           /* ignore bad URLs */
@@ -99,6 +142,7 @@ export async function crawl(startUrl, onProgress = () => {}, options = {}) {
 
 function resolve(href, base) {
   if (!href) return null;
+  if (/^(mailto:|tel:|javascript:|data:)/i.test(href.trim())) return null;
   try {
     return new URL(href, base).href;
   } catch {

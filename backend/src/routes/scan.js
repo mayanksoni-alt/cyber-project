@@ -1,13 +1,14 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
-import { runScan } from '../services/scanner.js';
+import { runScan, cancelScan } from '../services/scanner.js';
 import { saveScan, getScan, listScans, deleteScan } from '../config/store.js';
 import { normalizeUrl } from '../utils/http.js';
-import { optionalAuth } from '../utils/auth.js';
+import { requireAuth } from '../utils/auth.js';
 
 const router = Router();
 
-router.use(optionalAuth);
+// All scan operations require an authenticated user.
+router.use(requireAuth);
 
 // Start a new scan. Returns a scan id immediately; work continues in background.
 router.post('/scan', async (req, res) => {
@@ -32,7 +33,7 @@ router.post('/scan', async (req, res) => {
 
   const scan = {
     id: randomUUID(),
-    user_id: req.user?.id || null,
+    user_id: req.user.id,
     target_url: target,
     scan_mode: mode,
     status: 'queued',
@@ -59,12 +60,26 @@ router.post('/scan', async (req, res) => {
 router.get('/scan/:id', async (req, res) => {
   const scan = await getScan(req.params.id);
   if (!scan) return res.status(404).json({ error: 'Scan not found.' });
+  if (scan.user_id && scan.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'You do not have permission to view this scan.' });
+  }
   res.json(scan);
+});
+
+// Stop an in-progress scan
+router.post('/scan/:id/cancel', async (req, res) => {
+  const scan = await getScan(req.params.id);
+  if (!scan) return res.status(404).json({ error: 'Scan not found.' });
+  if (scan.user_id && scan.user_id !== req.user.id) {
+    return res.status(403).json({ error: 'You do not have permission to stop this scan.' });
+  }
+  cancelScan(req.params.id);
+  res.json({ cancelling: true });
 });
 
 // Delete a scan
 router.delete('/scan/:id', async (req, res) => {
-  const result = await deleteScan(req.params.id, req.user?.id || null);
+  const result = await deleteScan(req.params.id, req.user.id);
   if (result === 'forbidden') {
     return res.status(403).json({ error: 'You do not have permission to delete this scan.' });
   }
@@ -72,10 +87,9 @@ router.delete('/scan/:id', async (req, res) => {
   res.json({ deleted: true });
 });
 
-// Recent scans (scoped to signed-in user when scope=mine, otherwise recent scans)
+// Recent scans for the signed-in user
 router.get('/scans', async (req, res) => {
-  const userId = req.user?.id && req.query.scope !== 'all' ? req.user.id : null;
-  const scans = await listScans(25, userId);
+  const scans = await listScans(25, req.user.id);
   res.json(scans);
 });
 

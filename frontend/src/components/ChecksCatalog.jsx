@@ -78,7 +78,7 @@ export default function ChecksCatalog({ navigate }) {
         <div>
           <h2 style={{ margin: '0 0 6px' }}>OWASP-Based Security Checks</h2>
           <p className="muted" style={{ margin: 0, maxWidth: 660 }}>
-            SentryScan runs passive and safe detection checks across crawled pages without executing
+            NetHawk runs passive and safe detection checks across crawled pages without executing
             destructive exploitation payloads.
           </p>
         </div>

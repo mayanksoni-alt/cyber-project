@@ -8,7 +8,11 @@ let supabase = null;
 
 if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
   supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-    auth: { persistSession: false },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
   });
   console.log('  Supabase: connected');
 } else {

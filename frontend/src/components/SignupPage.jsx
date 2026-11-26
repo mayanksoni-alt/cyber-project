@@ -96,7 +96,7 @@ export default function SignupPage({ onAuthSuccess, navigate }) {
 
         <div className="auth-showcase-center">
           <HydrogenAtom size={160} scanning={busy} floating label="Hydrogen orbital emblem" />
-          <h2>Create your SentryScan account</h2>
+          <h2>Create your NetHawk account</h2>
           <p className="muted">
             Keep a personal log of your scans, compare security grades, and export clean reports
             whenever you need them.

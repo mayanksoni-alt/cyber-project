@@ -1,4 +1,4 @@
-# Backend — SentryScan API
+# Backend — NetHawk API
 
 Express API that crawls a target and runs detection checks.
 

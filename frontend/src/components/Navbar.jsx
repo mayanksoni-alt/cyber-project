@@ -40,9 +40,9 @@ export default function Navbar({
     <header className="pt-navbar">
       <div className="pt-navbar-inner">
         <button type="button" className="pt-brand" onClick={() => navTo('/')}>
-          <HydrogenAtom size={34} scanning={busy} label="SentryScan Logo" />
+          <HydrogenAtom size={34} scanning={busy} label="NetHawk Logo" />
           <div className="pt-brand-text">
-            <strong>SentryScan</strong>
+            <strong>NetHawk</strong>
             <span>Website Vulnerability Scanner</span>
           </div>
         </button>
